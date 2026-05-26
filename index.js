@@ -2,6 +2,7 @@ const nombreTarea = document.getElementById('nombre-tarea');
 const horaTarea = document.getElementById('hora-tarea');
 const botónAgregarTarea = document.getElementById('botón-agregar-tarea');
 const listaTareas = document.getElementById('lista-tareas');
+const botonPermiso = document.getElementById('boton-activar-notificaciones');
 
 let tareas = JSON.parse(localStorage.getItem('misTareas')) || [];
 
@@ -42,18 +43,59 @@ function renderizarTareas(){
     });
 
     localStorage.setItem('misTareas', JSON.stringify(tareas));
+
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+            tipo: 'ACTUALIZAR_TAREAS',
+            lista: tareas
+        });
+    }
 }
 
-    setInterval(function(){
-        const ahora = new Date();
-        const horaActual = ahora.getHours().toString().padStart(2, '0') + ":" + ahora.getMinutes().toString().padStart(2, '0');
-        tareas.forEach(function(tarea){
-            if(tarea.hora === horaActual && !tarea.notificada){
-                alert("⏰ ¡Es hora de tu tarea!: " + tarea.texto);
-
-                tarea.notificada = true;
-                renderizarTareas()
-            }
-        });
-    },1000);
 renderizarTareas();
+
+botonPermiso.addEventListener('click', function() {
+    console.log("Solicitando permiso desde un botón real...");
+    
+    Notification.requestPermission().then(function(permiso) {
+        console.log("Respuesta del navegador:", permiso);
+        
+        if (permiso === "granted") {
+            alert("¡Perfecto! Notificaciones del sistema activadas con éxito. 🔔");
+            botonPermiso.style.display = "none"; // Escondemos el botón porque ya no se necesita
+        } else if (permiso === "denied") {
+            alert("El navegador bloqueó la solicitud. Recuerda desbloquearlo desde el candado de la barra de direcciones.");
+        }
+    });
+});
+
+if (Notification.permission === "granted") {
+    botonPermiso.style.display = "none";
+}
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+        .then(function(registro) {
+            console.log("¡Service Worker registrado con éxito en el dispositivo!", registro.scope);
+        })
+        .catch(function(error) {
+            console.error("Error al registrar el Service Worker:", error);
+        });
+}
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', function(evento) {
+        if (evento.data && evento.data.tipo === 'TAREA_NOTIFICADA_EN_SW') {
+            // Buscamos la tarea en nuestra lista local y la marcamos como notificada
+            tareas = tareas.map(function(tarea) {
+                if (tarea.texto === evento.data.texto) {
+                    tarea.notificada = true;
+                }
+                return tarea;
+            });
+            // Guardamos en LocalStorage y re-dibujamos la pantalla sin romper nada
+            localStorage.setItem('misTareas', JSON.stringify(tareas));
+            renderizarTareas();
+        }
+    });
+}
