@@ -1,0 +1,18 @@
+{
+  "short_name": "Tareas",
+  "name": "Changing Star Tasks",
+  "description": "Sistema de gestión de tareas con notificaciones nativas en segundo plano.",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2693/2693507.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#ffffff",
+  "theme_color": "#007fff",
+  "display": "standalone",
+  "orientation": "portrait"
+}
