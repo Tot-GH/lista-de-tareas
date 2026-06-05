@@ -1,10 +1,53 @@
+const NOMBRE_CACHE = 'cache-tareas-v1';
+const ARCHIVOS_ESTATICOS = [
+    './',
+    './index.html',
+    './index.js',
+    './manifest.json',
+    'https://cdn-icons-png.flaticon.com/512/2693/2693507.png' // Tu ícono externo
+];
+
 let tareasEnSegundoPlano = [];
 
 self.addEventListener('install', function(evento) {
+    evento.waitUntil(
+        caches.open(NOMBRE_CACHE).then(function(cache) {
+            console.log('-> SW: Guardando archivos estáticos en caché');
+            return cache.addAll(ARCHIVOS_ESTATICOS);
+        })
+    );
     self.skipWaiting(); 
 });
 
+// Interceptar peticiones para activar el soporte offline (Cache First)
+self.addEventListener('fetch', function(evento) {
+    evento.respondWith(
+        caches.match(evento.request).then(function(respuestaCache) {
+            // Si el archivo fue encontrado en la caché, lo sirve localmente
+            if (respuestaCache) {
+                return respuestaCache;
+            }
+            // Si no estaba en la caché, va a internet
+            return fetch(evento.request);
+        })
+    );
+});
+
 self.addEventListener('activate', function(evento) {
+    const listaBlancaCaches = [NOMBRE_CACHE];
+
+    evento.waitUntil(
+        caches.keys().then(function(nombresCache) {
+            return Promise.all(
+                nombresCache.map(function(nombreCache) {
+                    if (listaBlancaCaches.indexOf(nombreCache) === -1) {
+                        console.log('-> SW: Eliminando caché antigua:', nombreCache);
+                        return caches.delete(nombreCache);
+                    }
+                })
+            );
+        })
+    );
     return self.clients.claim();
 });
 
