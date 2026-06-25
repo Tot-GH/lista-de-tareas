@@ -7,8 +7,7 @@ const ARCHIVOS_ESTATICOS = [
     'https://cdn-icons-png.flaticon.com/512/2693/2693507.png' // Tu ícono externo
 ];
 
-let tareasEnSegundoPlano = [];
-
+// Instalar y guardar los recursos estáticos en caché (Cache First)
 self.addEventListener('install', function(evento) {
     evento.waitUntil(
         caches.open(NOMBRE_CACHE).then(function(cache) {
@@ -33,6 +32,7 @@ self.addEventListener('fetch', function(evento) {
     );
 });
 
+// Activar y limpiar cachés antiguas
 self.addEventListener('activate', function(evento) {
     const listaBlancaCaches = [NOMBRE_CACHE];
 
@@ -51,56 +51,62 @@ self.addEventListener('activate', function(evento) {
     return self.clients.claim();
 });
 
-// Solo escuchamos para actualizar la lista limpia
-self.addEventListener('message', function(evento) {
-    if (evento.data && evento.data.tipo === 'ACTUALIZAR_TAREAS') {
-        tareasEnSegundoPlano = evento.data.lista;
-        console.log("-> SW: Lista actualizada:", tareasEnSegundoPlano);
-    }
-    if (evento.data.tipo === 'PEDIR_ESTADO_ACTUAL') {
-        self.clients.matchAll().then(function(clientes) {
-            clientes.forEach(function(cliente) {
-                cliente.postMessage({
-                    tipo: 'SINCRONIZACION_AL_DESPERTAR',
-                    lista: tareasEnSegundoPlano
-                });
-            });
-        });
-    }
-});
-
-// Reloj en segundo plano
+// RELOJ EN SEGUNDO PLANO USANDO INDEXEDDB DIRECTAMENTE
 setInterval(function() {
-    if (tareasEnSegundoPlano.length === 0) return;
+  // Abrimos la base de datos desde el Service Worker de forma asíncrona
+  const peticionConexion = indexedDB.open('lista-tareas-db', 1);
 
-    const ahora = new Date();
-    const horaActual = ahora.getHours().toString().padStart(2, '0') + ":" + ahora.getMinutes().toString().padStart(2, '0');
+  peticionConexion.onsuccess = function(evento) {
+    const db = evento.target.result;
+    
+    // Verificamos si existe el almacén de objetos para evitar errores en cargas tempranas
+    if (!db.objectStoreNames.contains('tareas')) return;
 
-    tareasEnSegundoPlano.forEach(function(tarea) {
-        // CONDICIÓN CRÍTICA: Validamos la hora y que estrictamente NO haya sido notificada aquí
+    const transaccion = db.transaction('tareas', 'readwrite');
+    const almacen = transaccion.objectStore('tareas');
+    const peticionGetAll = almacen.getAll();
+
+    peticionGetAll.onsuccess = function(e) {
+      const tareasEnSegundoPlano = e.target.result || [];
+      if (tareasEnSegundoPlano.length === 0) return;
+
+      const ahora = new Date();
+      const horaActual = ahora.getHours().toString().padStart(2, '0') + ":" + 
+                         ahora.getMinutes().toString().padStart(2, '0');
+
+      tareasEnSegundoPlano.forEach(function(tarea) {
+        // Validamos la hora y que estrictamente NO haya sido notificada
         if (tarea.hora === horaActual && tarea.notificada === false) {
-            
-            // 1. LA VOLVEMOS TRUE INMEDIATAMENTE (Freno de mano instantáneo)
-            tarea.notificada = true;
+          
+          // 1. Modificamos el estado de la tarea en IndexedDB directamente
+          tarea.notificada = true;
+          almacen.put(tarea); // Guarda el objeto actualizado en la BD
 
-            // 2. Lanzamos la notificación
-            self.registration.showNotification("⏰ ¡Es hora de tu tarea!", {
-                body: tarea.texto,
-                icon: "https://cdn-icons-png.flaticon.com/512/2693/2693507.png",
-                badge: "https://cdn-icons-png.flaticon.com/512/2693/2693507.png"
+          // 2. Lanzamos la notificación push local nativa
+          self.registration.showNotification("⏰ ¡Es hora de tu tarea!", {
+            body: tarea.texto,
+            icon: "https://cdn-icons-png.flaticon.com/512/2693/2693507.png",
+            badge: "https://cdn-icons-png.flaticon.com/512/2693/2693507.png"
+          });
+
+          console.log(`-> SW: Notificación enviada para la tarea: "${tarea.texto}"`);
+
+          // 3. Avisamos a las pestañas abiertas que IndexedDB cambió para que refresquen la UI
+          self.clients.matchAll().then(function(clientes) {
+            clientes.forEach(function(cliente) {
+              cliente.postMessage({
+                tipo: 'TAREA_NOTIFICADA_GLOBAL',
+                id: tarea.id
+              });
             });
-            
-            // 3. Avisamos a la interfaz para que actualice su localStorage permanentemente
-            self.clients.matchAll().then(function(clientes) {
-                clientes.forEach(function(cliente) {
-                    cliente.postMessage({
-                        tipo: 'TAREA_NOTIFICADA_GLOBAL',
-                        texto: tarea.texto,
-                        hora: tarea.hora,
-                        id: tarea.id,
-                    });
-                });
-            });
+          });
         }
-    });
+      });
+    };
+  };
+
+  peticionConexion.onerror = function() {
+    // Falla silenciosa o logs ligeros para no saturar la consola del SW
+    console.log('-> SW: No se pudo abrir la BD para verificar alertas programadas.');
+  };
 }, 1000);

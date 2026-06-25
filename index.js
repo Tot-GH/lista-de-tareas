@@ -4,64 +4,134 @@ const botónAgregarTarea = document.getElementById('botón-agregar-tarea');
 const listaTareas = document.getElementById('lista-tareas');
 const botonPermiso = document.getElementById('boton-activar-notificaciones');
 
-let tareas = JSON.parse(localStorage.getItem('misTareas')) || [];
+// Estado local en memoria de las tareas para el renderizado
+let tareas = [];
+let db;
 
+// 1. INICIALIZACIÓN DE INDEXEDDB
+const peticionConexion = indexedDB.open('lista-tareas-db', 1);
+
+// Este evento solo se dispara si la BD no existe o cambia de versión
+peticionConexion.onupgradeneeded = function(evento) {
+  const baseDatos = evento.target.result;
+  console.log('-> BD: Creando o actualizando estructura de base de datos...');
+  
+  // Creamos el almacén 'tareas' usando el identificador único 'id' como keyPath
+  if (!baseDatos.objectStoreNames.contains('tareas')) {
+    baseDatos.createObjectStore('tareas', { keyPath: 'id' });
+  }
+};
+
+// Se ejecuta una vez que la base de datos se abre con éxito
+peticionConexion.onsuccess = function(evento) {
+  db = evento.target.result;
+  console.log('-> BD: Conexión exitosa a IndexedDB');
+  // Leemos las tareas guardadas para pintar la interfaz inicialmente
+  obtenerTareasDeDB();
+};
+
+peticionConexion.onerror = function(evento) {
+  console.error('-> BD: Error al abrir la base de datos:', evento.target.error);
+};
+
+// 2. LEER TAREAS DE INDEXEDDB
+function obtenerTareasDeDB() {
+  if (!db) return;
+
+  const transaccion = db.transaction('tareas', 'readonly');
+  const almacen = transaccion.objectStore('tareas');
+  const peticionGetAll = almacen.getAll();
+
+  peticionGetAll.onsuccess = function(evento) {
+    tareas = evento.target.result;
+    console.log('-> BD: Tareas cargadas desde IndexedDB:', tareas);
+    renderizarTareas();
+  };
+
+  peticionGetAll.onerror = function(evento) {
+    console.error('-> BD: Error al obtener las tareas:', evento.target.error);
+  };
+}
+
+// 3. AGREGAR NUEVA TAREA
 botónAgregarTarea.addEventListener('click', function() {
-    const textoDeLaTarea = nombreTarea.value;
+    const textoDeLaTarea = nombreTarea.value.trim();
     const valorHoraTarea = horaTarea.value;
 
-    if (textoDeLaTarea !== ""){
-        tareas.push({ 
+    if (textoDeLaTarea !== "" && db){
+        const nuevaTarea = {
             texto: textoDeLaTarea,
             hora: valorHoraTarea,
             notificada: false,
-            id: crypto.randomUUID(textoDeLaTarea),
-        });
-        renderizarTareas();
-        sincronizarConServiceWorker();
-        nombreTarea.value = "";
-        horaTarea.value = "";
-    }
+            id: crypto.randomUUID(), // Identificador único robusto del Sprint 1
+        };
+
+    const transaccion = db.transaction('tareas', 'readwrite');
+    const almacen = transaccion.objectStore('tareas');
+    const peticionAdd = almacen.add(nuevaTarea);
+
+    peticionAdd.onsuccess = function() {
+      console.log('-> BD: Tarea guardada con éxito en IndexedDB');
+      // Sincronizamos la UI volviendo a consultar la base de datos
+      obtenerTareasDeDB();
+      // Limpiamos los inputs
+      nombreTarea.value = "";
+      horaTarea.value = "";
+    };
+
+    peticionAdd.onerror = function(evento) {
+      console.error('-> BD: Error al guardar la tarea:', evento.target.error);
+    };
+  }
 });
 
+// 4. RENDERIZADO EN EL DOM Y ELIMINACIÓN
 function renderizarTareas(){
     listaTareas.innerHTML = "";
 
-    tareas.forEach(function(tarea, indice){
+    tareas.forEach(function(tarea){
         const nuevaTarea = document.createElement('li');
+        // Si la tarea ya fue notificada por el SW, podemos darle un estilo visual atenuado
+        if (tarea.notificada) {
+        nuevaTarea.style.textDecoration = "line-through";
+        nuevaTarea.style.opacity = "0.6";
+        }
         nuevaTarea.textContent = tarea.texto + " - " + (tarea.hora || "Sin hora") + " ";
 
         const botonEliminar = document.createElement('button');
         botonEliminar.textContent = "Eliminar";
 
         botonEliminar.addEventListener('click', function(){
-            tareas = tareas.filter(t => t.id !== tarea.id);
-            renderizarTareas();
-            sincronizarConServiceWorker();
+            if (!db) return;
+
+            const transaccion = db.transaction('tareas', 'readwrite');
+            const almacen = transaccion.objectStore('tareas');
+            const peticionDelete = almacen.delete(tarea.id);
+
+            peticionDelete.onsuccess = function() {
+                console.log(`-> BD: Tarea con ID ${tarea.id} eliminada con éxito`);
+                obtenerTareasDeDB(); // Recargamos la interfaz
+            };
+
+            peticionDelete.onerror = function(evento) {
+                console.error('-> BD: Error al eliminar la tarea:', evento.target.error);
+            };
         });
 
         nuevaTarea.appendChild(botonEliminar);
         listaTareas.appendChild(nuevaTarea);
     });
-
-    localStorage.setItem('misTareas', JSON.stringify(tareas));
-
 }
 
-function sincronizarConServiceWorker() {
-    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-            tipo: 'ACTUALIZAR_TAREAS',
-            lista: tareas
-        });
-    }
-}
-
-// Gestión del botón de permisos
+// 5. GESTIÓN DEL BOTÓN DE PERMISOS PARA NOTIFICACIONES
 botonPermiso.addEventListener('click', function() {
     Notification.requestPermission().then(function(permiso) {
         if (permiso === "granted") {
-            alert("¡Perfecto! Notificaciones activadas. 🔔");
+            const aviso = document.createElement('div');
+            aviso.style.cssText = "position: fixed; bottom: 20px; right: 20px; background: #007fff; color: white; padding: 15px; borderRadius: 8px; zIndex: 1000;";
+            aviso.textContent = "¡Perfecto! Notificaciones activadas. 🔔";
+            document.body.appendChild(aviso);
+            setTimeout(() => aviso.remove(), 3000);
             botonPermiso.style.display = "none";
         }
     });
@@ -71,44 +141,24 @@ if (Notification.permission === "granted") {
     botonPermiso.style.display = "none";
 }
 
-// Registro y escucha del Service Worker
+// 6. REGISTRO Y ESCUCHA DEL SERVICE WORKER
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', function(evento) {
         if (!evento.data) return;
 
-        // Cuando el SW nos diga que ya quemó la tarea, la marcamos aquí de forma fulminante
+        
         if (evento.data.tipo === 'TAREA_NOTIFICADA_GLOBAL') {
-            tareas = tareas.map(function(tarea) {
-                if (tarea.id === evento.data.id) {
-                    tarea.notificada = true;
-                }
-                return tarea;
-            });
-            localStorage.setItem('misTareas', JSON.stringify(tareas));
-            renderizarTareas();
-        }
-
-        if (evento.data.tipo === 'SINCRONIZACION_AL_DESPERTAR') {
-            // Solo sincronizamos si el Service Worker realmente ya tenía tareas guardadas en su memoria
-            if (evento.data.lista && evento.data.lista.length > 0) {
-                console.log("-> Interfaz: ¡localStorage actualizado con los datos reales del SW!");
-                tareas = evento.data.lista;
-                localStorage.setItem('misTareas', JSON.stringify(tareas));
-                renderizarTareas();
-            }
+            
+            console.log('-> Interfaz: El SW notificó una tarea, actualizando la vista...');
+            obtenerTareasDeDB();
         }
     });
 
     navigator.serviceWorker.register('sw.js')
         .then(function(registro) {
-            console.log("¡Service Worker activo!", registro.scope); 
-            if (navigator.serviceWorker.controller) {
-                navigator.serviceWorker.controller.postMessage({ tipo: 'PEDIR_ESTADO_ACTUAL' });
-            }
+            console.log("¡Service Worker activo!", registro.scope);
         })
         .catch(function(error) {
             console.error("Error:", error);
         });
 }
-
-renderizarTareas();
