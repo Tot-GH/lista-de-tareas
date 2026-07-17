@@ -10,7 +10,36 @@
     <button id="boton-activar-notificaciones">🔔 Activar Notificaciones en este dispositivo</button>
     <input type="text" id="nombre-tarea">
     <input type="time" id="hora-tarea">
+    <label for="categoria-tarea">Categoría:</label>
+    <select id="categoria-tarea">
+        <option value="Trabajo">Trabajo</option>
+        <option value="Personal">Personal</option>
+        <option value="Estudio">Estudio</option>
+    </select>
     <button id="botón-agregar-tarea">Agregar</button>
+    <dialog id="modal-editar" style="padding: 20px; border-radius: 8px; border: 1px solid #ccc; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+        <form method="dialog">
+            <h3>Editar Tarea</h3>
+            
+            <label for="editar-nombre">Texto de la tarea:</label><br>
+            <input type="text" id="editar-nombre" required style="width: 100%; margin-bottom: 10px;"><br>
+            
+            <label for="editar-hora">Hora de la tarea:</label><br>
+            <input type="time" id="editar-hora" style="width: 100%; margin-bottom: 10px;"><br>
+            
+            <label for="editar-categoria">Categoría:</label><br>
+            <select id="editar-categoria" style="width: 100%; margin-bottom: 15px;">
+            <option value="Trabajo">Trabajo</option>
+            <option value="Personal">Personal</option>
+            <option value="Estudio">Estudio</option>
+            </select><br>
+            
+            <div style="display: flex; justify-content: space-between;">
+            <button type="button" id="btn-cancelar-editar">Cancelar</button>
+            <button type="submit" id="btn-guardar-editar">Guardar Cambios</button>
+            </div>
+        </form>
+    </dialog>
     <ul id="lista-tareas"></ul>
 
     <script src="index.js"></script>

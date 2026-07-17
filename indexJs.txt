@@ -4,21 +4,13 @@ const botónAgregarTarea = document.getElementById('botón-agregar-tarea');
 const listaTareas = document.getElementById('lista-tareas');
 const botonPermiso = document.getElementById('boton-activar-notificaciones');
 const categoriaTarea = document.getElementById('categoria-tarea');
-const modalEditar = document.getElementById('modal-editar');
-const editarNombre = document.getElementById('editar-nombre');
-const editarHora = document.getElementById('editar-hora');
-const editarCategoria = document.getElementById('editar-categoria');
-const btnCancelarEditar = document.getElementById('btn-cancelar-editar');
-
-// Variable temporal para saber qué tarea se está editando
-let tareaEnEdicion = null;
 
 // Estado local en memoria de las tareas para el renderizado
 let tareas = [];
 let db;
 
 // 1. INICIALIZACIÓN DE INDEXEDDB
-const peticionConexion = indexedDB.open('lista-tareas-db-v2', 2);
+const peticionConexion = indexedDB.open('lista-tareas-db', 1);
 
 // Este evento solo se dispara si la BD no existe o cambia de versión
 peticionConexion.onupgradeneeded = function(evento) {
@@ -133,16 +125,36 @@ function renderizarTareas(){
         });
 
         botonEditar.addEventListener('click', function(){
-            // 1. Guardamos la referencia de la tarea que el usuario quiere modificar
-            tareaEnEdicion = tarea;
 
-            // 2. Poblamos el menú modal con los datos actuales de la tarea
-            editarNombre.value = tarea.texto;
-            editarHora.value = tarea.hora || "";
-            editarCategoria.value = tarea.categoria || "";
+            const nuevoTexto = prompt("Edita el texto de la tarea:", tarea.texto);
+            const nuevaHora = prompt("Edita la hora de la tarea:", tarea.hora);
+            const nuevaCategoria = prompt("Edita la categoría (Trabajo, Personal, Estudio):", tarea.categoria);
+    
+            // Si el usuario cancela (null) o deja el texto vacío ("")
+            if (nuevoTexto === null || nuevoTexto.trim() === "") {
+                return; // Salimos y no hacemos nada
+            }
 
-            // 3. Mostramos el menú en pantalla de forma nativa
-            modalEditar.showModal();
+            // Si pasamos la validación, actualizamos las propiedades del objeto actual
+            tarea.texto = nuevoTexto;
+            tarea.hora = nuevaHora;
+            tarea.categoria = nuevaCategoria;
+
+            const transaccion = db.transaction('tareas', 'readwrite');
+            const almacen = transaccion.objectStore('tareas');
+            const peticionPut = almacen.put(tarea);
+
+            peticionPut.onsuccess = function() {
+                console.log('-> BD: Tarea de modificó con éxito en IndexedDB');
+                // Sincronizamos la UI volviendo a consultar la base de datos
+                obtenerTareasDeDB();
+                
+            };
+
+            peticionPut.onerror = function(evento) {
+                console.error('-> BD: Error al guardar la tarea:', evento.target.error);
+            };
+
         });
 
         nuevaTarea.appendChild(botonEliminar);
@@ -174,7 +186,9 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', function(evento) {
         if (!evento.data) return;
 
+        
         if (evento.data.tipo === 'TAREA_NOTIFICADA_GLOBAL') {
+            
             console.log('-> Interfaz: El SW notificó una tarea, actualizando la vista...');
             obtenerTareasDeDB();
         }
@@ -188,42 +202,3 @@ if ('serviceWorker' in navigator) {
             console.error("Error:", error);
         });
 }
-
-// Acción de Cancelar en el menú de edición
-btnCancelarEditar.addEventListener('click', function() {
-    modalEditar.close();
-    tareaEnEdicion = null;
-});
-
-// Acción de Guardar Cambios al enviar el formulario del modal
-modalEditar.querySelector('form').addEventListener('submit', function(evento) {
-    // Evitamos el envío inmediato para controlar el cierre asíncronamente
-    evento.preventDefault();
-
-    // Validamos que exista una tarea seleccionada y que el texto no esté vacío
-    if (!tareaEnEdicion || !db || editarNombre.value.trim() === "") return;
-
-    // Actualizamos las propiedades de nuestro objeto con los datos del menú modal
-    tareaEnEdicion.texto = editarNombre.value.trim();
-    tareaEnEdicion.hora = editarHora.value;
-    tareaEnEdicion.categoria = editarCategoria.value;
-
-    // Si la hora fue editada y es diferente/nueva, reiniciamos el estado de notificación
-    // para que el Service Worker vuelva a evaluarla en su bucle de reloj.
-    tareaEnEdicion.notificada = false;
-
-    const transaccion = db.transaction('tareas', 'readwrite'); 
-    const almacen = transaccion.objectStore('tareas'); 
-    const peticionPut = almacen.put(tareaEnEdicion); 
-
-    peticionPut.onsuccess = function() { 
-        console.log('-> BD: Tarea modificada con éxito mediante menú modal'); 
-        obtenerTareasDeDB(); // Volvemos a consultar para refrescar la interfaz 
-        modalEditar.close(); // Cerramos el menú de forma segura
-        tareaEnEdicion = null; // Limpiamos la referencia
-    }; 
-
-    peticionPut.onerror = function(evento) { 
-        console.error('-> BD: Error al guardar la tarea modificada:', evento.target.error); 
-    };
-});

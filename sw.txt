@@ -1,4 +1,4 @@
-const NOMBRE_CACHE = 'cache-tareas-v2';
+const NOMBRE_CACHE = 'cache-tareas-v1';
 const ARCHIVOS_ESTATICOS = [
     './',
     './index.html',
@@ -54,7 +54,7 @@ self.addEventListener('activate', function(evento) {
 // RELOJ EN SEGUNDO PLANO USANDO INDEXEDDB DIRECTAMENTE
 setInterval(function() {
   // Abrimos la base de datos desde el Service Worker de forma asíncrona
-  const peticionConexion = indexedDB.open('lista-tareas-db-v2', 2);
+  const peticionConexion = indexedDB.open('lista-tareas-db', 1);
 
   peticionConexion.onsuccess = function(evento) {
     const db = evento.target.result;
